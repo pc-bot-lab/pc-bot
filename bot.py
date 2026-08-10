@@ -302,11 +302,14 @@ async def show_catalog(call: CallbackQuery):
 @router.callback_query(F.data == "contacts")
 async def show_contacts(call: CallbackQuery):
     try:
-        await safe_edit_message(call, "📞 *Контакты*\n\nТелефон: +7 (999) 123-45-67", reply_markup=main_menu())
+        await safe_edit_message(
+            call, 
+            "📞 *Контакты*\n\nСвяжитесь с нами в Telegram:\n@lex_i_con", 
+            reply_markup=main_menu()
+        )
         await call.answer()
     except Exception as e:
-        await send_error_to_developer(call.bot, f"Ошибка в show_contacts:\n{traceback.format_exc()}")
-
+        await send_error_to_developer(call.bot, f"Ошибка в show_contacts:\n{traceback.format_exc()}") 
 @router.callback_query(F.data == "my_orders")
 async def my_orders(call: CallbackQuery):
     try:
