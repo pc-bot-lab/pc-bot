@@ -17,7 +17,7 @@ BOT_TOKEN = "8805962190:AAE55596sWWha0bejMHySYuDgnRYSC9j_1s"
 ADMIN_ID = 938815106
 
 # 👇 ВАШ ТЕЛЕГРАМ ЮЗЕРНЕЙМ ДЛЯ УВЕДОМЛЕНИЙ ОБ ОШИБКАХ
-DEVELOPER_USERNAME = "@lex_i_con"
+DEVELOPER_USERNAME = "@lexiconKrut"
 
 PAYMENT_PHONE = "+7 776 404 2121"
 PAYMENT_OPERATOR = "Билайн"
@@ -240,19 +240,6 @@ async def send_error_to_developer(bot: Bot, error_text: str):
     except Exception as e:
         print(f"❌ Не удалось отправить ошибку разработчику: {e}")
 
-# ========== МИДЛВАР ДЛЯ ОТЛОВА ОШИБОК ==========
-class ErrorHandler:
-    def __init__(self, bot: Bot):
-        self.bot = bot
-    
-    async def __call__(self, call, *args, **kwargs):
-        try:
-            return await call(*args, **kwargs)
-        except Exception as e:
-            error_text = f"```\n{traceback.format_exc()}\n```"
-            await send_error_to_developer(self.bot, error_text)
-            raise e
-
 # ========== ХЕНДЛЕРЫ ==========
 router = Router()
 
@@ -304,12 +291,13 @@ async def show_contacts(call: CallbackQuery):
     try:
         await safe_edit_message(
             call, 
-            "📞 *Контакты*\n\nСвяжитесь с нами в Telegram:\n@lexiconKrut", 
+            "📞 *Менеджер*\n\nСвяжитесь с нами в Telegram:\n@lexiconKrut", 
             reply_markup=main_menu()
         )
         await call.answer()
     except Exception as e:
-        await send_error_to_developer(call.bot, f"Ошибка в show_contacts:\n{traceback.format_exc()}") 
+        await send_error_to_developer(call.bot, f"Ошибка в show_contacts:\n{traceback.format_exc()}")
+
 @router.callback_query(F.data == "my_orders")
 async def my_orders(call: CallbackQuery):
     try:
