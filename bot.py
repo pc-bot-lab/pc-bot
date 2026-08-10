@@ -361,7 +361,7 @@ async def create_order(call: CallbackQuery, state: FSMContext):
             f"📱 Номер: `{PAYMENT_PHONE}`\n"
             f"📶 Оператор: {PAYMENT_OPERATOR}\n"
             f"🌍 Страна: {PAYMENT_COUNTRY}\n\n"
-            f"📎 *Отправьте ФОТО чека в этот чат*"
+            f"📎 *Отправьте ФОТО или ДОКУМЕНТ чека в этот чат*"
         )
         
         await safe_edit_message(call, payment_text, reply_markup=None)
@@ -370,24 +370,37 @@ async def create_order(call: CallbackQuery, state: FSMContext):
     except Exception as e:
         await send_error_to_developer(call.bot, f"Ошибка в create_order:\n{traceback.format_exc()}")
 
-@router.message(OrderState.waiting_for_receipt, F.photo)
+# ======== УЛУЧШЕННАЯ ОБРАБОТКА ЧЕКОВ (ПРИНИМАЕТ ФОТО И ДОКУМЕНТЫ) ========
+@router.message(OrderState.waiting_for_receipt, F.photo | F.document)
 async def process_receipt_photo(msg: Message, state: FSMContext, bot: Bot):
     try:
         data = await state.get_data()
         order_id = data.get('order_id')
         
         if not order_id:
+            # Если order_id не найден в состоянии, ищем последний активный заказ пользователя
             orders = get_orders(limit=10)
             user_orders = [o for o in orders if o[1] == msg.from_user.id and o[6] == "⏳ Ожидает оплаты"]
             if user_orders:
                 order_id = user_orders[0][0]
                 await state.update_data(order_id=order_id)
             else:
-                await msg.answer("❌ Заказ не найден. Создайте новый заказ.")
+                await msg.answer("❌ Заказ не найден. Пожалуйста, создайте новый заказ через каталог.")
                 await state.clear()
                 return
         
-        file_id = msg.photo[-1].file_id
+        # Определяем тип вложения (фото или документ)
+        if msg.photo:
+            file_id = msg.photo[-1].file_id
+            file_type = "фото"
+        elif msg.document:
+            file_id = msg.document.file_id
+            file_type = "документ"
+        else:
+            await msg.answer("❌ Пожалуйста, отправьте фото или файл чека.")
+            return
+        
+        # Сохраняем чек в базе
         update_order_receipt(order_id, file_id)
         await state.clear()
         
@@ -396,27 +409,69 @@ async def process_receipt_photo(msg: Message, state: FSMContext, bot: Bot):
             await msg.answer("❌ Заказ не найден.")
             return
         
-        await bot.send_photo(
-            ADMIN_ID,
-            photo=file_id,
-            caption=f"📎 *Новый чек!*\n\nЗаказ #{order_id}\n👤 {order[2]}\n📦 {order[4]}\n💰 {order[5]}₽",
-            parse_mode="Markdown",
-            reply_markup=admin_order_actions(order_id)
-        )
-        
-        await msg.answer(
-            f"✅ *Чек отправлен!*\nЗаказ #{order_id} ожидает подтверждения.",
-            reply_markup=main_menu(),
-            parse_mode="Markdown"
-        )
+        # === ГАРАНТИРОВАННАЯ ОТПРАВКА АДМИНУ ===
+        try:
+            if msg.photo:
+                await bot.send_photo(
+                    ADMIN_ID,
+                    photo=file_id,
+                    caption=(
+                        f"📎 *Новый чек!*\n\n"
+                        f"Заказ #{order_id}\n"
+                        f"👤 {order[2]}\n"
+                        f"📦 {order[4]}\n"
+                        f"💰 {order[5]}₽\n"
+                        f"📎 Тип: {file_type}"
+                    ),
+                    parse_mode="Markdown",
+                    reply_markup=admin_order_actions(order_id)
+                )
+            else:
+                await bot.send_document(
+                    ADMIN_ID,
+                    document=file_id,
+                    caption=(
+                        f"📎 *Новый чек!*\n\n"
+                        f"Заказ #{order_id}\n"
+                        f"👤 {order[2]}\n"
+                        f"📦 {order[4]}\n"
+                        f"💰 {order[5]}₽\n"
+                        f"📎 Тип: {file_type}"
+                    ),
+                    parse_mode="Markdown",
+                    reply_markup=admin_order_actions(order_id)
+                )
+            # Если админ получил, подтверждаем пользователю
+            await msg.answer(
+                f"✅ *Чек отправлен!*\nЗаказ #{order_id} ожидает подтверждения.",
+                reply_markup=main_menu(),
+                parse_mode="Markdown"
+            )
+        except Exception as e:
+            # Если не удалось отправить админу, логируем и уведомляем пользователя
+            error_text = f"❌ Ошибка отправки чека админу: {e}\nЗаказ #{order_id}\nПользователь: {order[2]}"
+            await send_error_to_developer(bot, error_text)
+            await msg.answer(
+                "⚠️ Произошла ошибка при отправке чека администратору. Мы уже работаем над этим.\n"
+                "Пожалуйста, попробуйте еще раз через 1 минуту.",
+                reply_markup=main_menu()
+            )
     except Exception as e:
-        await send_error_to_developer(bot, f"Ошибка в process_receipt_photo:\n{traceback.format_exc()}")
+        # Глобальная обработка ошибок
+        error_text = f"❌ Критическая ошибка в process_receipt_photo:\n{traceback.format_exc()}"
+        await send_error_to_developer(bot, error_text)
+        await msg.answer(
+            "❌ Произошла ошибка. Пожалуйста, попробуйте еще раз или свяжитесь с поддержкой.",
+            reply_markup=main_menu()
+        )
 
 @router.message(OrderState.waiting_for_receipt)
 async def process_receipt_invalid(msg: Message):
     try:
         await msg.answer(
-            f"❌ Отправьте ФОТО чека.\n\n💳 Номер: `{PAYMENT_PHONE}`\n💰 Сумма: 500₽",
+            f"❌ Отправьте ФОТО или ДОКУМЕНТ с чеком.\n\n"
+            f"💳 Номер для оплаты: `{PAYMENT_PHONE}`\n"
+            f"💰 Сумма: 500₽",
             parse_mode="Markdown"
         )
     except Exception as e:
@@ -545,14 +600,25 @@ async def admin_view_receipt(call: CallbackQuery, bot: Bot):
             await call.answer("Чек не найден!")
             return
         
-        await bot.send_photo(
-            call.from_user.id,
-            photo=order[7],
-            caption=f"📎 *Чек для заказа #{order_id}*\n\n"
-                    f"👤 {order[2]}\n📦 {order[4]}\n💰 {order[5]}₽",
-            parse_mode="Markdown",
-            reply_markup=admin_order_actions(order_id)
-        )
+        # Пытаемся отправить как фото, если не получится — как документ
+        try:
+            await bot.send_photo(
+                call.from_user.id,
+                photo=order[7],
+                caption=f"📎 *Чек для заказа #{order_id}*\n\n"
+                        f"👤 {order[2]}\n📦 {order[4]}\n💰 {order[5]}₽",
+                parse_mode="Markdown",
+                reply_markup=admin_order_actions(order_id)
+            )
+        except:
+            await bot.send_document(
+                call.from_user.id,
+                document=order[7],
+                caption=f"📎 *Чек для заказа #{order_id}*\n\n"
+                        f"👤 {order[2]}\n📦 {order[4]}\n💰 {order[5]}₽",
+                parse_mode="Markdown",
+                reply_markup=admin_order_actions(order_id)
+            )
         await call.answer()
     except Exception as e:
         await send_error_to_developer(bot, f"Ошибка в admin_view_receipt:\n{traceback.format_exc()}")
@@ -604,6 +670,8 @@ async def main():
         print(f"👨‍💻 Разработчик: {DEVELOPER_USERNAME}")
         print("=" * 50)
         print("🚨 Все ошибки будут отправлены в ЛС разработчику!")
+        print("=" * 50)
+        print("💡 ВАЖНО: Администратор должен написать боту /start, чтобы бот мог отправлять чеки!")
         print("=" * 50)
         
         await dp.start_polling(bot)
