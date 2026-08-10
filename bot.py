@@ -304,7 +304,7 @@ async def show_contacts(call: CallbackQuery):
     try:
         await safe_edit_message(
             call, 
-            "📞 *Контакты*\n\nСвяжитесь с нами в Telegram:\n@lex_i_con", 
+            "📞 *Менеджер*\n\nСвяжитесь с нами в Telegram:\n@lexiconKrut", 
             reply_markup=main_menu()
         )
         await call.answer()
