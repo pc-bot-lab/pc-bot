@@ -537,11 +537,11 @@ async def admin_orders(call: CallbackQuery):
     try:
         orders = get_orders(limit=20)
         if not orders:
-            await safe_edit_message(call, "📋 *Нет заказов*", reply_markup=admin_panel())
+            await safe_edit_message(call, "📋 Нет заказов", reply_markup=admin_panel())
             await call.answer()
             return
 
-        text = "📋 *Список заказов*\n\n"
+        text = "📋 Список заказов\n\n"
         for order in orders[:10]:
             oid, uid, username, pid, pname, price, status, receipt, file_sent, created = order
             text += f"#{oid} | {status}\n👤 {username}\n📦 {pname}\n💰 {price}₽\n---\n"
